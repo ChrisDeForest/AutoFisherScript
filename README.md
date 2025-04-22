@@ -17,7 +17,7 @@ Automates Virtual Fisher on Discord via browser interaction, simulating a real u
 ## 📁 Project Structure
 
 ```
-AutoVirtualFisherBotter/
+AutoFisherScript/
 ├── main.py             # Entry point
 ├── fisher.py           # Fishing loop logic
 ├── captcha.py          # OCR and captcha solving
