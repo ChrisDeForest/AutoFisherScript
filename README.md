@@ -65,6 +65,9 @@ python main.py
 ```
 5. Log into Discord manually in the opened Chrome window, then press Enter in the terminal.
 
+> [!NOTE] 
+> Don't forget to change any file paths mentioned above to the respectful paths on your machine
+
 ## ⏯️ Pause & Resume
 
 Press ```Ctrl + Alt + P``` at any time in the terminal to pause or resume the bot.
