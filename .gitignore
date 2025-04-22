@@ -11,5 +11,6 @@ chrome_profile
 selenium/
 selenium
 logs/bot.log
+logs/
 assets/cropped.png
 assets/screen.png
