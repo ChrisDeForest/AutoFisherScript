@@ -10,3 +10,6 @@ chrome_profile/
 chrome_profile
 selenium/
 selenium
+logs/bot.log
+assets/cropped.png
+assets/screen.png

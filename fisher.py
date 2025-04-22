@@ -5,9 +5,11 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from captcha import solve_captcha
-import time, keyboard, logging
+import time, keyboard, logging, datetime
 
 is_paused = False
+last_captcha_text = ""
+FISHING_COOLDOWN = 3.75     # change this to closer to your actual fishing cooldown
 
 def start_fishing():
     # Setup browser
@@ -62,7 +64,7 @@ def start_fishing():
             if detect_possible_captcha(driver):
                 logging.warning("⚠️ Captcha detected! Attempting solve...")
                 solve_captcha(driver)
-                time.sleep(4)
+                time.sleep(5)
                 continue
 
             # Send /fish
@@ -72,7 +74,7 @@ def start_fishing():
             input_box.send_keys(Keys.ENTER)
             logging.info("Sent /fish")
 
-            time.sleep(4)
+            time.sleep(FISHING_COOLDOWN)
 
         except Exception as e:
             logging.debug(f"[loop retrying] {e.__class__.__name__}: {e}")
@@ -80,22 +82,54 @@ def start_fishing():
 
 
 def detect_possible_captcha(driver):
+    global last_captcha_text
+
     try:
-        # Find all embedded messages (these are the captcha boxes)
-        embeds = driver.find_elements(By.XPATH, '//article[contains(@class, "embed")]')
+        # Get all chat messages
+        messages = driver.find_elements(By.XPATH, '//div[@data-list-id="chat-messages"]/div[contains(@class,"messageListItem")]')
+        if not messages:
+            return False
 
-        # Check the last few embeds to see if they mention captcha or verify
-        for embed in embeds[-3:]:
-            text = embed.text.lower()
+        # Grab the last message in view
+        last_msg = messages[-1]
 
-            # If confirmation is present, it's solved
-            if "you may continue" in text:
-                logging.info("Captcha solved! You may continue.")
+        # Check for timestamp
+        try:
+            time_element = last_msg.find_element(By.XPATH, './/time')
+            timestamp = time_element.get_attribute("datetime")  # e.g. "2025-04-22T02:59:44.651Z"
+            msg_time = datetime.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            now = datetime.datetime.now(datetime.UTC).replace(tzinfo=datetime.timezone.utc)
+
+            if (now - msg_time).total_seconds() > 20:
+                logging.debug("Message is older than 20 seconds, ignoring.")
                 return False
+        except Exception as e:
+            logging.debug(f"Failed to parse timestamp: {e}")
+            return False
 
-            # If it's a captcha/verify message, flag it
-            if "captcha" in text or "/verify" in text:
-                return True
+        # Check for embed inside this message
+        embed_elements = last_msg.find_elements(By.XPATH, './/article[contains(@class, "embed")]')
+        if not embed_elements:
+            return False
+
+        embed = embed_elements[0]
+        text = embed.text.strip().lower()
+
+        # Avoid reprocessing the same captcha
+        if text == last_captcha_text:
+            return False
+
+        last_captcha_text = text
+
+        # Handle confirmation case
+        if "you may continue" in text:
+            logging.info("Captcha solved! You may continue.")
+            return False
+
+        # Detect captcha prompt
+        if "captcha" in text or "/verify" in text:
+            logging.warning("Captcha detected in most recent message.")
+            return True
 
     except Exception as e:
         logging.debug(f"[captcha detection error] {e}")

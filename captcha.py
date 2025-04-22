@@ -15,14 +15,10 @@ def solve_captcha(driver):
 
     text = pytesseract.image_to_string(captcha_region)
     # logging.info(f"TEXT EXTRACTED: {text}") # todo remove just for testing
-    # print(f"TEXT:  {text}") # todo remove just for testing
+    print(f"TEXT:  {text}") # todo remove just for testing
     code = extract_code(text)
     # logging.info(f"CODE EXTRACTED: {code}") # todo remove just for testing
-    # print(f"CODE: {code}") # todo remove just for testing
-
-    if not code:
-        captcha_region.show()
-        code = input("Enter captcha code manually: ").strip()
+    print(f"CODE: {code}") # todo remove just for testing
 
     if code:
         logging.info(f"Captcha solved: {code}")
