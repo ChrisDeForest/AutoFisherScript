@@ -1,0 +1,4 @@
+keyboard~=0.13.5
+selenium~=4.31.0
+pytesseract~=0.3.13
+Pillow~=10.0.1
