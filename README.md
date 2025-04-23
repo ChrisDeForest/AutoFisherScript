@@ -78,6 +78,25 @@ When paused:
 
 - You can activate boosts or perform manual actions.
 
+# ⚡ Boost Auto-Buyer
+
+The bot automatically buys boosts with cooldown padding (duration + 60 seconds):
+
+|    Boost    |     Command      | Duration |   Priority   |
+|:-----------:|:----------------:|:--------:|:------------:|
+|   Auto30m   |   /buy Auto30m   |  30 min  | Emerald Fish |
+|   Fish20m   |   /buy Fish20m   |  20 min  | Emerald Fish |
+| Treasure20m | /buy Treasure20m |  20 min  | Emerald Fish |
+|   Auto10m   |   /buy Auto10m   |  10 min  |  Gold Fish   |
+|   Fish5m    |   /buy Fish5m    |  5 min   |  Gold Fish   |
+| Treasure5m  | /buy Treasure5m  |  5 min   |  Gold Fish   |
+
+- Boosts are prioritized by emerald > gold
+
+- Boosts are staggered to avoid overlap
+
+- Boost buying pauses if the bot is paused
+
 ## 💡 Notes
 
 - This bot simulates user actions — it does not use the Discord API.
