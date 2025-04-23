@@ -65,11 +65,15 @@ def start_fishing():
             msg_type, code = detect_possible_captcha_and_classify(driver)
 
             if msg_type == "captcha":
-                logging.warning(f"Captcha detected! Code: {code if code else '???'}")
                 if code:
+                    logging.warning(f"Captcha detected! Code: {code if code else '???'}")
                     input_box = driver.find_element(By.XPATH, '//div[@role="textbox"]')
                     input_box.send_keys(f"/verify {code}")
                     input_box.send_keys("\n")
+                else:
+                    logging.warning("⚠️ Captcha detected but code could not be extracted.")
+                    logging.warning("⏸️ Pausing bot to prevent incorrect verification.")
+                    is_paused = True  # Pause the loop
                 print(f"Captcha detected! Code: {code if code else '???'}")
                 time.sleep(5)
                 continue
