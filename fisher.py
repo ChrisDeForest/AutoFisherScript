@@ -73,7 +73,7 @@ def start_fishing():
                 else:
                     logging.warning("⚠️ Captcha detected but code could not be extracted.")
                     logging.warning("⏸️ Pausing bot to prevent incorrect verification.")
-                    is_paused = True  # Pause the loop
+                    pause()     # Pause the loop
                 print(f"Captcha detected! Code: {code if code else '???'}")
                 time.sleep(5)
                 continue
@@ -114,3 +114,9 @@ def toggle_pause():
     is_paused = not is_paused
     state = "Paused" if is_paused else "Resumed"
     logging.info(f"{state} the {MODE} loop.")
+
+
+def pause():
+    global is_paused
+    is_paused = True
+    logging.info(f"Paused the {MODE} loop.")
