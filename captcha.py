@@ -1,12 +1,11 @@
 import pytesseract
-from PIL import Image, ImageFilter
-import re
-import logging
-import os
+from PIL import Image
+import re, os, logging
+import ollama, base64
 
 last_processed_ocr = ""
 
-def detect_possible_captcha_and_classify(driver):
+def classify_message(driver, type="captcha") -> str:
     global last_processed_ocr
 
     try:
@@ -15,59 +14,76 @@ def detect_possible_captcha_and_classify(driver):
 
         driver.save_screenshot("assets/screen.png")
         image = Image.open("assets/screen.png")
-        image.filter(ImageFilter.SHARPEN)
-        gray = image.convert("L")
-        custom_config = r'--oem 3 --psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-
-        # OPTIONAL: crop image to suspected captcha area
-        captcha_region = image.crop((575, 650, 1470, 1210))  # adjust this (use gray.crop() if doing image captchas)
-        captcha_region.save("assets/cropped.png")
+        cropped_region = ""
+        if type == "captcha":
+            cropped_region = image.crop((575, 650, 1470, 1200))     # cropped for large captcha message
+            cropped_region.save("assets/captcha.png")
+        elif type == "message":
+            cropped_region = image.crop((575, 1025, 1025, 1200))    # cropped for smaller verification message
+            cropped_region.save("assets/message.png")
 
         # Run OCR on it
-        # text = pytesseract.image_to_string(captcha_region, config=custom_config).strip()
-        text = pytesseract.image_to_string(captcha_region).strip()    # todo choose one or other
-        if not text or text == last_processed_ocr:
-            print("TEST1")
-            return "unknown", None
+        text = pytesseract.image_to_string(cropped_region).strip()
 
-        last_processed_ocr = text
-        text_lower = text       # todo put .lower() back if this doesn't work. code was correct but lowercase
+        if not text:    # classifying message
+            logging.info("No OCR result")
+            return "unknown"
+        elif text == last_processed_ocr and not type == "message":
+            logging.info("Classified message as DUPLICATE")
+            return "duplicate"
 
-        logging.debug(f"OCR result:\n{text}")
+        last_processed_ocr = text   # put this AFTER duplicate detection to avoid flagging everything as duplicate
 
-        # Classify message
-        if "/verify" in text_lower or "captcha" in text_lower or "Please use /verify" in text_lower:
+        if (("You may now continue." in text or "continue." in text or
+             "You currently do not have" in text or "currently" in text) and "captcha" not in text):
+            logging.info("Classified message as SUCCESSFUL CAPTCHA")
+            return "success"
+        elif "/verify" in text or "captcha" in text or "Please use /verify" in text:
             logging.info("Classified message as CAPTCHA.")
-            print(text_lower)
-            code = extract_code_from_text(text)
-            if code:
-                with open("assets/captcha_text.txt", "w", encoding="utf-8") as f:
-                    f.write(text)
-            return "captcha", code
-        elif "/fish" in text_lower or "you caught" in text_lower:
+            return "captcha"
+        elif "/fish" in text or "you caught" in text:
             logging.info("Classified message as FISH.")
-            return "fish", None
-        elif "/farm" in text_lower or "you farmed" in text_lower:
+            return "fish"
+        elif "/farm" in text or "you farmed" in text:
             logging.info("Classified message as FARMED.")
-            return "farmed", None
-        return "unknown", None
+            return "farmed"
+
+        return "unknown"    # default back to unknown
 
     except Exception as e:
         logging.error(f"[captcha classification error] {e}")
-        return "unknown", None
+        return "error"
+
+
+def get_captcha_code():
+    # Encode the image to base64
+    with open('assets/captcha.png', 'rb') as img_file:
+        image_bytes = img_file.read()
+        encoded_image = base64.b64encode(image_bytes).decode('utf-8')
+
+    # Send the image to the vision model
+    response = ollama.chat(
+        model='llama3.2-vision:11b',
+        messages=[
+            {
+                'role': 'user',
+                'content': 'What is the captcha code in this image? Return only the code with no special characters.'
+                           'If no code could be identified, return "NO CODE FOUND"',
+                'images': [encoded_image],
+            }
+        ]
+    )
+    # using regex to remove special chars
+    response = re.sub('[^A-Za-z0-9]+', '', response['message']['content'])
+    return response.strip()
 
 def extract_code_from_text(text):
-    text = text.strip()     # todo put .lower() back if this doesn't work
-
-    # Match /verify followed by a valid code, but not if it's 'regen'
-    match = re.search(r"/verify\s+((?!regen\b)[a-zA-Z0-9]{4,})", text)
-    if match:
+    text = text.strip()
+    match = re.search(r"/verify\s+((?!\b(?:regen|command)\b)[a-zA-Z0-9]{4,})", text)
+    if match:   # Match /verify followed by a valid code, but NOT 'regen' or 'command'
         return match.group(1)
-
-    # Match Code: <something> — still allow that
     match = re.search(r"code:\s*([a-zA-Z0-9]{4,})", text)
-    if match:
+    if match:   # Match Code: <something> — still allow that
         return match.group(1)
-
     return None
 

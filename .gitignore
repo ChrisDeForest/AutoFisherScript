@@ -12,5 +12,7 @@ selenium/
 selenium
 logs/bot.log
 logs/
-assets/cropped.png
+assets/captcha.png
 assets/screen.png
+assets/message.png
+assets/
