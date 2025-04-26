@@ -36,7 +36,7 @@ def start_boost_scheduler(driver):
                     logging.info(f"Buying boost: {boost['name']}")
                     try:
                         if send_command_ref:
-                            time.sleep(4)   # sleep for 4 seconds
+                            time.sleep(5)   # sleep for 4 seconds
                             send_command_ref(driver, boost["command"])
                         last_used[boost["name"]] = datetime.now()
                     except Exception as e:

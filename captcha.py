@@ -16,10 +16,10 @@ def classify_message(driver, type="captcha") -> str:
         image = Image.open("assets/screen.png")
         cropped_region = ""
         if type == "captcha":
-            cropped_region = image.crop((575, 650, 1470, 1200))     # cropped for large captcha message
+            cropped_region = image.crop((575, 275, 1475, 1200))     # cropped for large captcha message
             cropped_region.save("assets/captcha.png")
         elif type == "message":
-            cropped_region = image.crop((575, 1025, 1025, 1200))    # cropped for smaller verification message
+            cropped_region = image.crop((575, 1025, 1475, 1200))    # cropped for smaller verification message
             cropped_region.save("assets/message.png")
 
         # Run OCR on it
@@ -30,12 +30,13 @@ def classify_message(driver, type="captcha") -> str:
             return "unknown"
         elif text == last_processed_ocr and not type == "message":
             logging.info("Classified message as DUPLICATE")
+            print(text)
             return "duplicate"
 
         last_processed_ocr = text   # put this AFTER duplicate detection to avoid flagging everything as duplicate
 
-        if (("You may now continue." in text or "continue." in text or
-             "You currently do not have" in text or "currently" in text) and "captcha" not in text):
+        if ("You may now continue." in text or "continue." in text or
+             "You currently do not have" in text or "currently" in text):
             logging.info("Classified message as SUCCESSFUL CAPTCHA")
             return "success"
         elif "/verify" in text or "captcha" in text or "Please use /verify" in text:

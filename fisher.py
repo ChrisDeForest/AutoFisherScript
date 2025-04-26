@@ -8,14 +8,16 @@ from datetime import datetime, timedelta
 from boost_scheduler import start_boost_scheduler, set_paused_getter, set_command_sender
 from captcha import classify_message, get_captcha_code
 
-import time, keyboard, logging
+import time, keyboard, logging, random
 
-is_paused, pause_logged = False, False
+is_paused, pause_logged, is_busy = False, False, False
 last_captcha_text = ""
 FISHING_COOLDOWN = 3        # change this to closer to your actual fishing cooldown
 MODE = "fishing"            # change this depending on what bot you are using
 last_captcha_solve_time = None
 CAPTCHA_GRACE_PERIOD = timedelta(minutes=3)
+last_refresh_time = datetime.now()
+REFRESH_INTERVAL = timedelta(minutes=20)
 
 def start_fishing():
     # Setup browser
@@ -26,9 +28,9 @@ def start_fishing():
     input("Log in to Discord manually\nEnsure an Ollama vision model is running\nPress enter to start...")
 
     # Inject dependencies and start boost loop
-    # set_paused_getter(lambda: is_paused)
-    # set_command_sender(send_command)
-    # start_boost_scheduler(driver)
+    set_paused_getter(lambda: is_paused)
+    set_command_sender(send_command)
+    start_boost_scheduler(web_driver)
 
     logging.info("Looking for message input box...")
     input_box = None
@@ -41,34 +43,43 @@ def start_fishing():
 
     keyboard.add_hotkey('ctrl+alt+p', toggle_pause)
     keyboard.add_hotkey('f8', toggle_pause)
-    logging.info("Press CTRL+ALT+P or f8 at any time to pause/resume the loop.")
+    keyboard.add_hotkey('f12', clear_bot_log)
+    logging.info("Press CTRL+ALT+P or f8 at any time to pause/resume the loop.\n" +
+                 "Press f12 at any time to clear the log.")
 
     logging.info(f"Starting {MODE} loop.")
 
     while True:     # main fishing loop
+        maybe_refresh(web_driver=web_driver)
         if check_is_paused(): continue      # only continue if loop is not paused
         try:
             if not check_right_dm(web_driver=web_driver): continue          # only act if we're in the right DM
             msg_type = classify_message(driver=web_driver, type="captcha")  # check if the bot sent a captcha message
             if msg_type == "captcha":
+                set_busy(True)      # stop sending other commands while captcha is processing
                 code = get_captcha_code()   # get verification code from image
-                print("CAPTCHA CODE:", code)    # todo remove just for testing
                 if code == "NO CODE FOUND":
                     pause()
                     logging.info("No code found. Waiting for manual captcha solution...")
+                    set_busy(False)
                     continue
                 send_command(web_driver=web_driver, command=f"/verify {code}")  # send verification code
-                time.sleep(3)
+                time.sleep(5)
                 msg_type = classify_message(driver=web_driver, type="message")  # check if verification was successful
                 if not msg_type == "success":
                     pause()
                     logging.info("Verification failed. Waiting for manual captcha solution...")
+                    set_busy(False)
                     continue
-                # if captcha was successfully solved, skip down a few lines to avoid detection issues
-                for i in range(10): send_command(web_driver=web_driver, command=f"Skipping lines: {i + 1}")
+                for i in range(10):     # if captcha was successful, skip down a few lines to avoid detection issues
+                    send_command(web_driver=web_driver, command=f"Skipping lines: {i + 1}")
+                    time.sleep(2)
+                    set_busy(False)
             elif msg_type == "duplicate" or msg_type == "error":
-                for i in range(5): send_command(web_driver=web_driver, command=f"Skipping lines: {i+1}")
-                time.sleep(5)
+                for i in range(5):
+                    send_command(web_driver=web_driver, command=f"Skipping lines: {i + 1}")
+                    time.sleep(2)
+                set_busy(False)
                 continue
 
             # Send proper command
@@ -77,7 +88,7 @@ def start_fishing():
             elif MODE == "farming":
                 send_command(web_driver=web_driver, command="/farm")
 
-            time.sleep(FISHING_COOLDOWN)
+            time.sleep(FISHING_COOLDOWN + random.random())
 
         except Exception as e:
             logging.debug(f"[loop retrying] {e.__class__.__name__}: {e}")
@@ -108,8 +119,14 @@ def pause():
     is_paused = True
     logging.info(f"Paused the {MODE} loop.")
 
-
 def send_command(web_driver, command):
+    global is_busy
+    while is_busy:      # wait if something else is happening
+        time.sleep(0.1) # wait a little
+    is_busy = True      # when safe, lock sending
+
+    if handle_chill_zone(web_driver=web_driver):
+        return
     try:
         input_box = web_driver.find_element(By.XPATH, '//div[@role="textbox"]')
         input_box.send_keys(command)
@@ -118,6 +135,8 @@ def send_command(web_driver, command):
         logging.info(f"Sent command: {command}")
     except Exception as e:
         logging.error(f"Failed to send command: {command}. Error: {e}")
+    finally:
+        is_busy = False # when done, unlock
 
 def check_right_dm(web_driver) -> bool:
     if not is_in_virtual_chat(web_driver):
@@ -148,3 +167,37 @@ def setup_browser():
     options.add_argument("--disable-gpu")
     options.add_argument("--start-maximized")
     return webdriver.Chrome(service=service, options=options)
+
+def clear_bot_log(filepath="logs/bot.log"):
+    try:
+        with open(filepath, "w") as file:
+            pass  # opening in write mode 'w' without writing anything empties the file
+        print(f"✅ Cleared {filepath}.")
+    except Exception as e:
+        print(f"❌ Failed to clear {filepath}: {e}")
+
+def handle_chill_zone(web_driver) -> bool:
+    try:
+        # Look for the modal by its label or unique button text
+        chill_button = web_driver.find_element(By.XPATH, "//div[contains(text(), 'Enter the chill zone')]/ancestor::button")
+        logging.info("Chill Zone detected. Clicking the button and cooling down...")
+        chill_button.send_keys(Keys.ENTER)
+        time.sleep(10)
+        return True
+    except NoSuchElementException:
+        return False
+
+def maybe_refresh(web_driver):
+    global last_refresh_time
+    if datetime.now() - last_refresh_time > REFRESH_INTERVAL:
+        logging.info("Refreshing page to prevent slowdown...")
+        web_driver.refresh()
+        time.sleep(10)
+        last_refresh_time = datetime.now()
+
+def set_busy(state: bool):
+    global is_busy
+    is_busy = state
+
+def can_send_command():
+    return not is_busy
