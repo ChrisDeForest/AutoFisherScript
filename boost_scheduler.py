@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 # Track if the main bot is paused externally
 is_paused_ref = lambda: False
 send_command_ref = None
+pause_logged = False
 
 # Define all boosts with priority (emerald > gold) and cooldowns (duration + 1min buffer)
 BOOSTS = [
@@ -22,10 +23,12 @@ last_used = {boost["name"]: datetime.min for boost in BOOSTS}
 
 def start_boost_scheduler(driver):
     def scheduler_loop():
+        from fisher import can_send_command
         logging.info("Starting boost scheduler thread...")
         while True:
-            if is_paused_ref():
-                time.sleep(5)
+            if is_paused_ref() or not can_send_command():
+                check_pause_logged()
+                time.sleep(2)
                 continue
 
             now = datetime.now()
@@ -54,3 +57,15 @@ def set_paused_getter(func):
 def set_command_sender(func):
     global send_command_ref
     send_command_ref = func
+
+def check_pause_logged():
+    global pause_logged
+    if is_paused_ref():
+        if not pause_logged:
+            logging.info("Attempted to buy a boost but script is paused or busy.")
+            pause_logged = True
+        time.sleep(1)
+        return True
+    else:
+        pause_logged = False
+        return False

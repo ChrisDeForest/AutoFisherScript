@@ -3,3 +3,4 @@ selenium~=4.31.0
 pytesseract~=0.3.13
 ollama~=0.4.7
 pillow~=11.1.0
+psutil~=7.0.0

@@ -6,7 +6,7 @@ from selenium import webdriver
 from datetime import datetime, timedelta
 
 from boost_scheduler import start_boost_scheduler, set_paused_getter, set_command_sender
-from captcha import classify_message, get_captcha_code
+from captcha import classify_message, get_captcha_code, generate_case_variations
 
 import time, keyboard, logging, random
 
@@ -18,14 +18,17 @@ last_captcha_solve_time = None
 CAPTCHA_GRACE_PERIOD = timedelta(minutes=3)
 last_refresh_time = datetime.now()
 REFRESH_INTERVAL = timedelta(minutes=20)
+web_driver_instance = None
 
 def start_fishing():
     # Setup browser
-    web_driver = setup_browser()
+    global web_driver_instance
+    web_driver_instance = setup_browser()
+    web_driver = web_driver_instance
     web_driver.get("https://discord.com/channels/@me")
 
     logging.info("Waiting for manual login...")
-    input("Log in to Discord manually\nEnsure an Ollama vision model is running\nPress enter to start...")
+    input("Log in to Discord manually\nPress enter to start...")
 
     # Inject dependencies and start boost loop
     set_paused_getter(lambda: is_paused)
@@ -44,49 +47,69 @@ def start_fishing():
     keyboard.add_hotkey('ctrl+alt+p', toggle_pause)
     keyboard.add_hotkey('f8', toggle_pause)
     keyboard.add_hotkey('f12', clear_bot_log)
+    keyboard.add_hotkey('ctrl+alt+r', lambda: restart_browser())
     logging.info("Press CTRL+ALT+P or f8 at any time to pause/resume the loop.\n" +
-                 "Press f12 at any time to clear the log.")
+                 "Press f12 at any time to clear the log.\n" +
+                 "Press CTRL+ALT+R at any time to restart the browser.")
 
     logging.info(f"Starting {MODE} loop.")
 
     while True:     # main fishing loop
-        maybe_refresh(web_driver=web_driver)
+        maybe_refresh(web_driver=web_driver_instance)
         if check_is_paused(): continue      # only continue if loop is not paused
         try:
-            if not check_right_dm(web_driver=web_driver): continue          # only act if we're in the right DM
-            msg_type = classify_message(driver=web_driver, type="captcha")  # check if the bot sent a captcha message
+            if not check_right_dm(web_driver=web_driver_instance): continue          # only act if we're in the right DM
+            msg_type = classify_message(driver=web_driver_instance, type="captcha")  # check if the bot sent a captcha message
             if msg_type == "captcha":
                 set_busy(True)      # stop sending other commands while captcha is processing
                 code = get_captcha_code()   # get verification code from image
-                if code == "NO CODE FOUND":
+                if code == "NOCODEFOUND" or code == "NO CODE FOUND":
                     pause()
                     logging.info("No code found. Waiting for manual captcha solution...")
                     set_busy(False)
                     continue
-                send_command(web_driver=web_driver, command=f"/verify {code}")  # send verification code
+                set_busy(False)     # it is already set in send_command, was causing infinite pausing
+                send_command(web_driver=web_driver_instance, command=f"/verify {code}")  # send verification code
+                set_busy(True)      # continue blocking commands until done with captcha code block
                 time.sleep(5)
-                msg_type = classify_message(driver=web_driver, type="message")  # check if verification was successful
+                msg_type = classify_message(driver=web_driver_instance, type="message")  # check if verification was successful
                 if not msg_type == "success":
-                    pause()
-                    logging.info("Verification failed. Waiting for manual captcha solution...")
-                    set_busy(False)
-                    continue
+                    new_codes = generate_case_variations(code=code)
+                    verified = False
+                    for new_code in new_codes:
+                        logging.info(f"Testing new code: {new_code}")
+                        send_command(web_driver=web_driver_instance, command=f"/verify {new_code}")
+                        time.sleep(3)
+                        msg_type = classify_message(driver=web_driver_instance, type="message")
+                        if msg_type == "success":
+                            logging.info(f"Successfully verified code: {new_code}")
+                            verified = True
+                            break
+                    if not verified:
+                        pause()
+                        logging.info("Verification failed. Waiting for manual captcha solution...")
+                        set_busy(False)
+                        continue
                 for i in range(10):     # if captcha was successful, skip down a few lines to avoid detection issues
-                    send_command(web_driver=web_driver, command=f"Skipping lines: {i + 1}")
-                    time.sleep(2)
                     set_busy(False)
+                    send_command(web_driver=web_driver_instance, command=f"Skipping lines: {i + 1}")
+                    set_busy(True)
+                    time.sleep(2)
             elif msg_type == "duplicate" or msg_type == "error":
                 for i in range(5):
-                    send_command(web_driver=web_driver, command=f"Skipping lines: {i + 1}")
+                    set_busy(False)
+                    send_command(web_driver=web_driver_instance, command=f"Skipping lines: {i + 1}")
+                    set_busy(True)
                     time.sleep(2)
                 set_busy(False)
                 continue
+            set_busy(False)
 
             # Send proper command
             if MODE == "fishing":
-                send_command(web_driver=web_driver, command="/fish")
+                send_command(web_driver=web_driver_instance, command="/fish")
             elif MODE == "farming":
-                send_command(web_driver=web_driver, command="/farm")
+                send_command(web_driver=web_driver_instance, command="/farm")
 
             time.sleep(FISHING_COOLDOWN + random.random())
 
@@ -192,7 +215,7 @@ def maybe_refresh(web_driver):
     if datetime.now() - last_refresh_time > REFRESH_INTERVAL:
         logging.info("Refreshing page to prevent slowdown...")
         web_driver.refresh()
-        time.sleep(10)
+        time.sleep(5)
         last_refresh_time = datetime.now()
 
 def set_busy(state: bool):
@@ -201,3 +224,28 @@ def set_busy(state: bool):
 
 def can_send_command():
     return not is_busy
+
+def restart_browser():
+    global web_driver_instance, last_refresh_time
+
+    logging.info("Restarting browser...")
+
+    try:
+        if web_driver_instance is not None:
+            web_driver_instance.quit()
+            logging.info("Old browser closed successfully.")
+    except Exception as e:
+        logging.error(f"Error closing old browser: {e}")
+
+    web_driver_instance = setup_browser()
+    web_driver_instance.get("https://discord.com/channels/@me")
+    last_refresh_time = datetime.now()
+
+    logging.info("New browser launched and navigated to Discord!")
+
+    # re-inject boost scheduler and command sender if needed
+    set_paused_getter(lambda: is_paused)
+    set_command_sender(send_command)
+    start_boost_scheduler(web_driver_instance)
+
+    return web_driver_instance

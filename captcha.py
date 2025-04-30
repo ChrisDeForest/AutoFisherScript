@@ -11,12 +11,14 @@ def classify_message(driver, type="captcha") -> str:
     try:
         # Ensure assets folder exists
         os.makedirs("assets", exist_ok=True)
-
-        driver.save_screenshot("assets/screen.png")
+        # todo remove this; testing new screenshot methods
+        screenshot = driver.execute_cdp_cmd("Page.captureScreenshot", {})
+        with open("assets/screen.png", "wb") as f:
+            f.write(base64.b64decode(screenshot['data']))
         image = Image.open("assets/screen.png")
         cropped_region = ""
         if type == "captcha":
-            cropped_region = image.crop((575, 275, 1475, 1200))     # cropped for large captcha message
+            cropped_region = image.crop((575, 575, 1475, 1200))     # cropped for large captcha message
             cropped_region.save("assets/captcha.png")
         elif type == "message":
             cropped_region = image.crop((575, 1025, 1475, 1200))    # cropped for smaller verification message
@@ -42,10 +44,10 @@ def classify_message(driver, type="captcha") -> str:
         elif "/verify" in text or "captcha" in text or "Please use /verify" in text:
             logging.info("Classified message as CAPTCHA.")
             return "captcha"
-        elif "/fish" in text or "you caught" in text:
+        elif "/fish" in text or "you caught" in text or "You caught" in text:
             logging.info("Classified message as FISH.")
             return "fish"
-        elif "/farm" in text or "you farmed" in text:
+        elif "/farm" in text or "you farmed" in text or "You farmed" in text:
             logging.info("Classified message as FARMED.")
             return "farmed"
 
@@ -84,7 +86,21 @@ def extract_code_from_text(text):
     if match:   # Match /verify followed by a valid code, but NOT 'regen' or 'command'
         return match.group(1)
     match = re.search(r"code:\s*([a-zA-Z0-9]{4,})", text)
-    if match:   # Match Code: <something> — still allow that
+    if match:  # Match Code: <something> — still allow that
         return match.group(1)
     return None
 
+def generate_case_variations(code: str) -> list[str]:
+    variations = []
+
+    for i, c in enumerate(code):
+        if c.isalpha():
+            # Flip the case of the i-th character
+            flipped = (
+                code[:i] +
+                (c.lower() if c.isupper() else c.upper()) +
+                code[i+1:]
+            )
+            variations.append(flipped)
+
+    return variations

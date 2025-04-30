@@ -1,4 +1,4 @@
-import ollama
+import ollama_client
 import base64
 
 # Encode the image to base64
